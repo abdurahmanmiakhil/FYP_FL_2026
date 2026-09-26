@@ -2,7 +2,7 @@
 
 > Read this first. It describes what the project is, how it was built, every technology used, where
 > each piece lives, how to run/test it, the rules that must not be broken, and known gaps.
-> Last updated: 2026-09-26 (commit after `0435549` on branch `clean-main`).
+> Last updated: 2026-09-26. Official repository: https://github.com/abdurahmanmiakhil/FYP_FL_2026 (branch `main`).
 
 ---
 
@@ -253,7 +253,13 @@ fakeredis, `JOBS_SYNC=true` (jobs run in-process) and fake models (`prostate_inf
 
 ## 11. History / state
 
-- Commit `0435549` on `clean-main` = the full rebuild (not pushed). Remote: `https://github.com/abdurahmanmiakhil/FL_FYP.git`.
+- **Official repository: https://github.com/abdurahmanmiakhil/FYP_FL_2026 (public), branch `main`**, started
+  from one clean commit (no old history). Local git: remote `origin` = FYP_FL_2026, local branch `main`
+  tracks `origin/main`. Commits are authored as `Abdurahman Miakhil <163681164+abdurahmanmiakhil@users.noreply.github.com>`.
+- Old repository `https://github.com/abdurahmanmiakhil/FL_FYP.git` is remote `legacy` (branch `clean-main` holds
+  the same code with the old history; local branches `clean-main` and `legacy-main` keep it). Do not push new work there.
+- The repository is **public**: never commit `.env`, `secrets/`, `models/` (the private thesis models),
+  `storage/`, `backups/` or patient data; run gitleaks (`make security-scan`) before pushing.
 - The running local stack (2026-09-26) had the 6 demo cases visible; earlier test cases were soft-deleted (audited).
 - Keep `BACKUP_PASSPHRASE` from `.env` off the machine; backups cannot be restored without it.
 - Further reading: `README.md`, `docs/runbook.md`, `docs/user_guide.md`, `docs/demo_script.md`, `docs/model_card.md`.
