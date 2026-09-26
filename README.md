@@ -41,6 +41,10 @@ The slide never leaves the server that runs the model: the browser only receives
 
 ## Quick start (laptop, CPU)
 
+**New machine? Follow [docs/SETUP_NEW_MACHINE.md](docs/SETUP_NEW_MACHINE.md)** - install tools, copy the
+model bundle, `make setup`, `make seed-demo`, and `make tunnel` for a public link anyone can open.
+
+
 Requirements: Docker Desktop (8 GB RAM for Docker, 20 GB free disk), `make`, `openssl`.
 
 ```bash
@@ -53,6 +57,9 @@ make seed-demo                             # demo accounts (password printed) + 
 
 Open **https://localhost** (accept the local certificate) and sign in, e.g. as
 `pathologist.radboud@gleasonai.demo` with the printed password. `make help` lists every command.
+
+**Share it online (free):** `make tunnel` prints a public `https://…trycloudflare.com` link via Cloudflare
+Tunnel (no open ports); `make tunnel-named` gives a permanent link on your own Cloudflare domain.
 
 Real deployment (own domain, GPU, Hugging Face model repo): see [docs/deployment.md](docs/deployment.md).
 To create your own administrator: `make seed-admin EMAIL=you@hospital.org HOSPITAL="Your Hospital"`.

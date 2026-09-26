@@ -29,3 +29,6 @@ frontend/test-results/
 
 # OS
 .DS_Store
+
+# Cloudflare tunnel runtime state (link, log, pid)
+.tunnel/

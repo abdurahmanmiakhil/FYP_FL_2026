@@ -2,6 +2,7 @@
 #   https://$DOMAIN  -> Caddy (automatic HTTPS) -> frontend (Next.js) and /api -> api (FastAPI)
 #   storage: PostgreSQL (cases, users, audit) + SeaweedFS S3 (slides, results; encrypted at rest)
 # Optional profiles:  --profile monitoring (Prometheus, Alertmanager, Grafana)
+#                     --profile tunnel / tunnel-named (public access via Cloudflare Tunnel)
 #                     --profile antivirus  (ClamAV; set CLAMAV_HOST=clamav)
 # GPU worker:         docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
 name: gleasonai
@@ -194,6 +195,29 @@ services:
     depends_on:
       db: {condition: service_healthy}
       s3: {condition: service_healthy}
+
+  # --- public access through Cloudflare Tunnel (no open ports, free) ---------------------------
+  # Quick tunnel: random https://<words>.trycloudflare.com link, no account.   make tunnel
+  tunnel:
+    <<: *restart
+    profiles: [tunnel]
+    image: cloudflare/cloudflared:2026.9.3
+    command: ["tunnel", "--no-autoupdate", "--url", "https://caddy:443", "--no-tls-verify",
+              "--http-host-header", "${DOMAIN:-localhost}", "--origin-server-name", "${DOMAIN:-localhost}"]
+    depends_on:
+      caddy: {condition: service_started}
+
+  # Named tunnel: permanent link on your own Cloudflare account/domain.   make tunnel-named
+  # Needs TUNNEL_TOKEN in .env (see docs/SETUP_NEW_MACHINE.md, part C).
+  tunnel-named:
+    <<: *restart
+    profiles: [tunnel-named]
+    image: cloudflare/cloudflared:2026.9.3
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      caddy: {condition: service_started}
 
   clamav:
     <<: *restart

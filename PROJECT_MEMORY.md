@@ -197,6 +197,22 @@ Production refuses to start with the dev SECRET_KEY, COOKIE_SECURE=false or SQLi
 
 ---
 
+### Public access - Cloudflare Tunnel (added 2026-09-26)
+- `make tunnel` → `scripts/tunnel.sh start`: quick tunnel, random `https://<words>.trycloudflare.com` link, no account.
+  Uses native `cloudflared` if installed (brew/deb; **preferred on macOS/Windows** because Docker Desktop's network
+  layer dropped the tunnel's QUIC connection), else the `tunnel` compose service (profile `tunnel`, image
+  `cloudflare/cloudflared:2026.9.3`, target `https://caddy:443`). Retries because `api.trycloudflare.com` is often slow.
+  State in `.tunnel/` (url, log, pid; gitignored). `make tunnel-url`, `make tunnel-down`.
+- `make tunnel-named` → permanent hostname with `TUNNEL_TOKEN` in `.env` (Cloudflare Zero Trust tunnel; origin
+  `https://localhost:443` or `https://caddy:443`, No TLS Verify, Host header + origin server name `localhost`).
+- Caddy trusts `CF-Connecting-IP` only from private ranges (the tunnel) and passes exactly one `X-Forwarded-For`,
+  so rate limits/audit see the real visitor IP (verified: audit recorded the real public IP).
+- Build machine quirk: its network connects to Cloudflare IPv4 in ~20 s (IPv6 fast); external checks from
+  Spain/France/Iran/Hong Kong loaded the link in 0.5-3 s. Not an app problem.
+- `make setup` (`scripts/setup.sh`) = first-time setup on a new machine (checks, bundle, env, fetch, up, wait).
+  Full beginner guide: `docs/SETUP_NEW_MACHINE.md` (macOS / Windows WSL2 / Linux).
+- Watch free disk: Docker build cache grows ~20 GB; `docker builder prune -f` is safe.
+
 ## 7. Testing & quality commands
 
 | Command | What |

@@ -4,12 +4,14 @@ PROD := docker compose -f docker-compose.yml
 DEV := docker compose -f docker-compose.yml -f docker-compose.override.yml
 DEVBACKEND := docker compose -f docker-compose.dev.yml
 THESIS_DIR ?= $(HOME)/Desktop/abdurahman FYP/v2_pipeline/submission_files
+THESIS_DIR_ARG := $(if $(filter command line environment,$(origin THESIS_DIR)),$(THESIS_DIR),)
 TEST_IMAGE := gleasonai-worker-test
 
 .DEFAULT_GOAL := help
 .PHONY: help env bundle fetch up up-gpu down dev dev-backend monitoring logs ps migrate seed-admin seed-demo seed-e2e \
         test test-inference test-backend test-frontend e2e lint build test-image backup restore restore-test \
-        security-scan validate loadtest openapi clean-cache
+        security-scan validate loadtest openapi clean-cache \
+        tunnel tunnel-url tunnel-named tunnel-down setup monitoring
 
 help: ## show this help
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,7 +36,7 @@ up-gpu: ## start with the NVIDIA GPU worker
 	$(PROD) -f docker-compose.gpu.yml up -d --build
 
 down: ## stop everything (data volumes are kept)
-	$(PROD) --profile monitoring --profile antivirus down
+	$(PROD) --profile monitoring --profile antivirus --profile tunnel --profile tunnel-named down
 
 dev: ## full stack with hot reload (API + dashboard), API docs at /api/v1/docs
 	$(DEV) up -d --build
@@ -44,6 +46,21 @@ dev-backend: ## backend only (api, worker, scheduler, postgres, redis) on http:/
 
 monitoring: ## start Prometheus (127.0.0.1:9090), Alertmanager (:9093), Grafana (:3001)
 	$(PROD) --profile monitoring up -d
+
+tunnel: ## share the running app on the internet via a free Cloudflare quick tunnel (prints the link)
+	./scripts/tunnel.sh start
+
+tunnel-url: ## print the current public link
+	@./scripts/tunnel.sh url
+
+tunnel-named: ## permanent link through your Cloudflare account (needs TUNNEL_TOKEN in .env)
+	./scripts/tunnel.sh named
+
+tunnel-down: ## stop public access (the app keeps running locally)
+	./scripts/tunnel.sh stop
+
+setup: ## first-time setup on a new machine: checks + models + env + fetch + start + wait (THESIS_DIR=... optional)
+	THESIS_DIR="$(THESIS_DIR_ARG)" ./scripts/setup.sh
 
 logs: ## follow logs
 	$(PROD) logs -f --tail 100

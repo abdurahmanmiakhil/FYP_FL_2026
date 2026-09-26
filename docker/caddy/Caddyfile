@@ -2,6 +2,13 @@
 # HSTS, and routing: /api/* -> FastAPI, everything else -> Next.js. Internal endpoints are blocked.
 {
 	admin off
+	servers {
+		# Cloudflare Tunnel (the cloudflared container) connects from the private Docker network:
+		# trust its CF-Connecting-IP header so rate limits and the audit trail see the real visitor IP.
+		# Requests from the internet (public IPs) can never set this header themselves.
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP X-Forwarded-For
+	}
 	{$CADDY_GLOBAL_OPTIONS}
 }
 
@@ -26,6 +33,7 @@
 			max_size 2200MB
 		}
 		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {client_ip}   # exactly one, trusted client address
 			flush_interval -1          # stream server-sent events (job progress) immediately
 			transport http {
 				read_timeout 15m           # large multipart uploads
