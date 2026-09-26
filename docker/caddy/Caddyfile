@@ -1,0 +1,45 @@
+# Public entry point: automatic HTTPS (Let's Encrypt for a real domain, a local CA for localhost),
+# HSTS, and routing: /api/* -> FastAPI, everything else -> Next.js. Internal endpoints are blocked.
+{
+	admin off
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		-Server
+	}
+
+	# never expose metrics or the bare liveness probe to the internet
+	@internal path /metrics /metrics/* /healthz
+	handle @internal {
+		respond 404
+	}
+
+	handle /api/* {
+		request_body {
+			max_size 2200MB
+		}
+		reverse_proxy api:8000 {
+			flush_interval -1          # stream server-sent events (job progress) immediately
+			transport http {
+				read_timeout 15m           # large multipart uploads
+				write_timeout 15m
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

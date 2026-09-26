@@ -1,0 +1,253 @@
+# GleasonAI production stack.  make env && make fetch && make up
+#   https://$DOMAIN  -> Caddy (automatic HTTPS) -> frontend (Next.js) and /api -> api (FastAPI)
+#   storage: PostgreSQL (cases, users, audit) + SeaweedFS S3 (slides, results; encrypted at rest)
+# Optional profiles:  --profile monitoring (Prometheus, Alertmanager, Grafana)
+#                     --profile antivirus  (ClamAV; set CLAMAV_HOST=clamav)
+# GPU worker:         docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+name: gleasonai
+
+x-backend-env: &backend-env
+  ENV: ${ENV:-prod}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  SECRET_KEY: ${SECRET_KEY:?run make env}
+  PUBLIC_URL: ${PUBLIC_URL:-https://localhost}
+  CORS_ORIGINS: '["${PUBLIC_URL:-https://localhost}"]'
+  COOKIE_SECURE: "true"
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-gleasonai}:${POSTGRES_PASSWORD:?run make env}@db:5432/${POSTGRES_DB:-gleasonai}
+  REDIS_URL: redis://:${REDIS_PASSWORD:?run make env}@redis:6379/0
+  STORAGE_BACKEND: s3
+  S3_ENDPOINT_URL: http://s3:8333
+  S3_BUCKET: ${S3_BUCKET:-gleasonai}
+  S3_ACCESS_KEY: gleasonai-app
+  S3_SECRET_KEY: ${S3_APP_SECRET:?run make env}
+  STORAGE_DIR: /data/storage
+  SLIDE_CACHE_DIR: /data/slide-cache
+  RETENTION_DAYS: ${RETENTION_DAYS:-3650}
+  CLAMAV_HOST: ${CLAMAV_HOST:-}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  MODEL_SOURCE: ${MODEL_SOURCE:-local}
+  MODEL_DIR: /models/bundle
+  MODEL_CACHE_DIR: /models/cache
+  HF_HOME: /models/cache/hf
+  HF_MODEL_REPO: ${HF_MODEL_REPO:-Obaidullahmiakhil/prostate-fl-fedavg-phikon}
+  HF_MODEL_REPO_TYPE: ${HF_MODEL_REPO_TYPE:-model}
+  HF_MODEL_REVISION: ${HF_MODEL_REVISION:-main}
+  PHIKON_REPO: ${PHIKON_REPO:-owkin/phikon}
+  PHIKON_REVISION: ${PHIKON_REVISION:-057cc0295895c2df3dd7681a89680da6015cbefe}
+  OFFLINE: ${OFFLINE:-1}
+  DEMO_SLIDES_DIR: ${DEMO_SLIDES_DIR:+/demo-slides}
+
+x-restart: &restart
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: {max-size: "20m", max-file: "5"}
+
+services:
+  caddy:
+    <<: *restart
+    image: caddy:2.10-alpine
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend: {condition: service_healthy}
+      api: {condition: service_healthy}
+
+  frontend:
+    <<: *restart
+    build: {context: ., dockerfile: docker/frontend.Dockerfile}
+    image: ${REGISTRY:-gleasonai}/frontend:${TAG:-latest}
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  api:
+    <<: *restart
+    build: {context: ., dockerfile: docker/api.Dockerfile}
+    image: ${REGISTRY:-gleasonai}/api:${TAG:-latest}
+    environment: *backend-env
+    volumes: [data:/data]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      s3-init: {condition: service_completed_successfully}
+
+  worker:
+    <<: *restart
+    build: {context: ., dockerfile: docker/worker.Dockerfile, target: runtime}
+    image: ${REGISTRY:-gleasonai}/worker:${TAG:-latest}
+    environment: *backend-env
+    volumes:
+      - ./models/bundle:/models/bundle:ro
+      - model_cache:/models/cache
+      - data:/data
+      - ${DEMO_SLIDES_DIR:-./storage/.empty}:/demo-slides:ro
+    secrets: [hf_token]
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 1g
+    depends_on:
+      api: {condition: service_healthy}
+
+  scheduler:
+    <<: *restart
+    image: ${REGISTRY:-gleasonai}/api:${TAG:-latest}
+    environment: {<<: *backend-env, SKIP_MIGRATIONS: "1"}
+    command: ["python", "-m", "backend.scripts.scheduler"]
+    volumes: [data:/data]
+    healthcheck: {disable: true}
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      api: {condition: service_healthy}
+
+  db:
+    <<: *restart
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gleasonai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gleasonai}
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gleasonai} -d ${POSTGRES_DB:-gleasonai}"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    <<: *restart
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  s3:
+    <<: *restart
+    image: chrislusf/seaweedfs:4.47
+    # S3-compatible object storage. -encryptVolumeData: every stored chunk is AES-encrypted at rest.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        cat > /tmp/s3.json <<JSON
+        {"identities": [
+          {"name": "admin", "credentials": [{"accessKey": "$$S3_ADMIN_ACCESS_KEY", "secretKey": "$$S3_ADMIN_SECRET"}],
+           "actions": ["Admin", "Read", "Write", "List", "Tagging"]},
+          {"name": "gleasonai-app", "credentials": [{"accessKey": "gleasonai-app", "secretKey": "$$S3_APP_SECRET"}],
+           "actions": ["Read:$$S3_BUCKET", "Write:$$S3_BUCKET", "List:$$S3_BUCKET", "Tagging:$$S3_BUCKET"]}
+        ]}
+        JSON
+        exec weed server -dir=/data -ip=s3 -s3 -s3.config=/tmp/s3.json -s3.encryptVolumeData -filer.encryptVolumeData -master.volumeSizeLimitMB=1024 -volume.max=200
+    environment:
+      S3_ADMIN_ACCESS_KEY: ${S3_ADMIN_ACCESS_KEY:-gleasonai-admin}
+      S3_ADMIN_SECRET: ${S3_ADMIN_SECRET:?run make env}
+      S3_APP_SECRET: ${S3_APP_SECRET:?run make env}
+      S3_BUCKET: ${S3_BUCKET:-gleasonai}
+    volumes: [s3_data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8333/healthz || exit 1"]
+      interval: 5s
+      retries: 30
+
+  s3-init:
+    image: ${REGISTRY:-gleasonai}/api:${TAG:-latest}
+    entrypoint: ["python", "-c"]
+    command:
+      - |
+        import os, boto3
+        s3 = boto3.client("s3", endpoint_url="http://s3:8333", region_name="us-east-1",
+                          aws_access_key_id=os.environ["S3_ADMIN_ACCESS_KEY"], aws_secret_access_key=os.environ["S3_ADMIN_SECRET"])
+        b = os.environ["S3_BUCKET"]
+        if b not in [x["Name"] for x in s3.list_buckets().get("Buckets", [])]:
+            s3.create_bucket(Bucket=b)
+        print(f"bucket {b} ready (private; the app user can only access this bucket)")
+    environment:
+      S3_ADMIN_ACCESS_KEY: ${S3_ADMIN_ACCESS_KEY:-gleasonai-admin}
+      S3_ADMIN_SECRET: ${S3_ADMIN_SECRET}
+      S3_BUCKET: ${S3_BUCKET:-gleasonai}
+    depends_on:
+      s3: {condition: service_healthy}
+
+  backup:
+    <<: *restart
+    build: {context: docker/backup}
+    image: ${REGISTRY:-gleasonai}/backup:${TAG:-latest}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gleasonai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-gleasonai}
+      S3_ADMIN_ACCESS_KEY: ${S3_ADMIN_ACCESS_KEY:-gleasonai-admin}
+      S3_ADMIN_SECRET: ${S3_ADMIN_SECRET}
+      S3_BUCKET: ${S3_BUCKET:-gleasonai}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?run make env}
+      BACKUP_HOUR: ${BACKUP_HOUR:-1}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+    volumes: ["${BACKUP_DIR:-./backups}:/backups"]
+    depends_on:
+      db: {condition: service_healthy}
+      s3: {condition: service_healthy}
+
+  clamav:
+    <<: *restart
+    profiles: [antivirus]
+    image: clamav/clamav:1.4
+
+  prometheus:
+    <<: *restart
+    profiles: [monitoring]
+    image: prom/prometheus:v3.5.0
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+
+  alertmanager:
+    <<: *restart
+    profiles: [monitoring]
+    image: prom/alertmanager:v0.28.1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - sed "s|\$${ALERT_WEBHOOK_URL}|$${ALERT_WEBHOOK_URL:-http://localhost:9/none}|" /etc/alertmanager/src.yml > /tmp/am.yml
+        && exec /bin/alertmanager --config.file=/tmp/am.yml --storage.path=/alertmanager
+    environment:
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    volumes: ["./docker/monitoring/alertmanager.yml:/etc/alertmanager/src.yml:ro"]
+    ports: ["127.0.0.1:9093:9093"]
+
+  grafana:
+    <<: *restart
+    profiles: [monitoring]
+    image: grafana/grafana:12.1.1
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run make env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./docker/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports: ["127.0.0.1:3001:3000"]
+
+secrets:
+  hf_token:
+    file: ./secrets/hf_token  # empty unless MODEL_SOURCE=hf (fine-grained READ-only token)
+
+volumes:
+  caddy_data:
+  caddy_config:
+  pg_data:
+  redis_data:
+  s3_data:
+  data:
+  model_cache:
+  prometheus_data:
+  grafana_data:

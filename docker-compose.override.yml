@@ -1,0 +1,27 @@
+# Local development overrides (merged automatically by a plain `docker compose up`; `make up` skips them).
+#   make dev   -> hot reload for the API (uvicorn --reload) and the dashboard (next dev), API docs enabled
+services:
+  api:
+    environment:
+      ENV: dev
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--reload-dir", "/app/backend"]
+    volumes:
+      - ./backend:/app/backend
+
+  worker:
+    volumes:
+      - ./backend:/app/backend
+
+  frontend:
+    build: {context: ., dockerfile: docker/frontend.Dockerfile, target: deps}
+    image: gleasonai/frontend-dev
+    read_only: false
+    command: ["npx", "next", "dev", "-H", "0.0.0.0", "-p", "3000"]
+    environment:
+      INTERNAL_API_URL: http://api:8000
+      WATCHPACK_POLLING: "true"
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next

@@ -1,0 +1,26 @@
+# Never bake data, models or secrets into images (models are mounted/fetched at deploy time)
+.git
+**/.env
+**/.env.*
+!**/.env.example
+models
+storage
+artifacts
+backups
+secrets
+docs
+node_modules
+**/node_modules
+**/.next
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage
+**/coverage
+**/playwright-report
+**/test-results
+**/*.tiff
+**/*.tif
+**/*.svs

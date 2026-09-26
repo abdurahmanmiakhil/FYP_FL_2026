@@ -1,0 +1,87 @@
+# Backend development stack: api (hot reload), worker, scheduler, postgres, redis.
+#   make dev-backend      (or: docker compose -f docker-compose.dev.yml up --build)
+# Local storage folder instead of MinIO, plain HTTP, API docs at http://localhost:8000/api/v1/docs
+name: gleasonai-dev
+
+x-backend-env: &backend-env
+  ENV: dev
+  LOG_LEVEL: INFO
+  SECRET_KEY: ${SECRET_KEY:-dev-only-insecure-secret-change-me-0123456789abcdef}
+  DATABASE_URL: postgresql+asyncpg://gleasonai:gleasonai@db:5432/gleasonai
+  REDIS_URL: redis://redis:6379/0
+  STORAGE_BACKEND: local
+  STORAGE_DIR: /data/storage
+  SLIDE_CACHE_DIR: /data/slide-cache
+  PUBLIC_URL: http://localhost:3000
+  CORS_ORIGINS: '["http://localhost:3000","http://127.0.0.1:3000"]'
+  COOKIE_SECURE: "false"
+  MODEL_SOURCE: local
+  MODEL_DIR: /models/bundle
+  MODEL_CACHE_DIR: /models/cache
+  HF_HOME: /models/cache/hf
+  PHIKON_REVISION: ${PHIKON_REVISION:-057cc0295895c2df3dd7681a89680da6015cbefe}
+  OFFLINE: ${OFFLINE:-0}
+  DEMO_SLIDES_DIR: ${DEMO_SLIDES_DIR:+/demo-slides}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: gleasonai
+      POSTGRES_PASSWORD: gleasonai
+      POSTGRES_DB: gleasonai
+    volumes: [dev_pg:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gleasonai"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports: ["127.0.0.1:6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: {context: ., dockerfile: docker/api.Dockerfile}
+    environment: *backend-env
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload",
+              "--reload-dir", "/app/backend"]
+    volumes:
+      - ./backend:/app/backend
+      - dev_data:/data
+    ports: ["127.0.0.1:8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+
+  worker:
+    build: {context: ., dockerfile: docker/worker.Dockerfile, target: runtime}
+    environment: *backend-env
+    volumes:
+      - ./backend:/app/backend
+      - ./models/bundle:/models/bundle:ro
+      - model_cache:/models/cache
+      - dev_data:/data
+      - ${DEMO_SLIDES_DIR:-./storage/.empty}:/demo-slides:ro
+    depends_on:
+      api: {condition: service_healthy}
+
+  scheduler:
+    build: {context: ., dockerfile: docker/api.Dockerfile}
+    environment: {<<: *backend-env, SKIP_MIGRATIONS: "1"}
+    command: ["python", "-m", "backend.scripts.scheduler"]
+    volumes: [dev_data:/data]
+    healthcheck: {disable: true}
+    depends_on:
+      api: {condition: service_healthy}
+
+volumes:
+  dev_pg:
+  dev_data:
+  model_cache:
+    name: gleasonai_model_cache
+    external: true

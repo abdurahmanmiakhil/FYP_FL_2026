@@ -1,0 +1,32 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:passlib", "ignore::DeprecationWarning:rq"]
+
+[tool.coverage.run]
+source = ["backend"]
+concurrency = ["greenlet", "thread"]
+omit = ["*/tests/*", "*/migrations/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["B008", "S101", "S104", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+"core/config.py" = ["S105"]
+"core/security.py" = ["S105"]
+"services/audit.py" = ["S105"]
+"tests/conftest.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+exclude = ["tests/", "migrations/"]

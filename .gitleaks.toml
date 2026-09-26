@@ -1,0 +1,18 @@
+# gitleaks config: default rules + allowlist for local-only generated files and test fixtures
+[extend]
+useDefault = true
+
+[allowlist]
+description = "local secrets files that are never committed (see .gitignore) and dummy test values"
+paths = [
+  '''(^|/)\.env$''',
+  '''(^|/)secrets/''',
+  '''(^|/)node_modules/''',
+  '''(^|/)\.next/''',
+  '''(^|/)backups/''',
+  '''(^|/)storage/''',
+  '''(^|/)models/''',
+  '''frontend/lib/api/schema\.d\.ts''',
+  '''(^|/)test-results/''',
+]
+regexes = ['''test-secret-key-0123456789abcdef0123456789''', '''dev-only-insecure-secret-change-me-0123456789abcdef''']

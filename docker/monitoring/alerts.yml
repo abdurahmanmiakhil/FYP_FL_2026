@@ -1,0 +1,43 @@
+groups:
+  - name: gleasonai
+    rules:
+      - alert: WorkerDown
+        expr: up{job="worker"} == 0 or absent(up{job="worker"}) or gleasonai_workers_ready == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "No inference worker with loaded models"
+          description: "Uploads are queued but nothing is processing them. Check `docker compose logs worker`."
+      - alert: QueueBacklog
+        expr: gleasonai_queue_length > 10
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Prediction queue above 10 jobs for 10 minutes"
+          description: "Queue length is {{ $value }}. Add a worker or a GPU."
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(gleasonai_http_request_duration_seconds_count{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(gleasonai_http_request_duration_seconds_count[5m])), 0.001) > 0.05
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "More than 5% of API requests fail with 5xx"
+      - alert: PredictionFailures
+        expr: increase(gleasonai_jobs_total{outcome=~"failed|error"}[1h]) > 3
+        labels: {severity: warning}
+        annotations:
+          summary: "Several slide analyses failed in the last hour"
+      - alert: SlowTiles
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(gleasonai_http_request_duration_seconds_bucket{route=~".*_files.*"}[10m]))) > 0.3
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Viewer tile p95 latency above 300 ms"
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "API not reachable by Prometheus"

@@ -1,0 +1,31 @@
+# secrets and local data - never commit
+.env
+secrets/
+models/
+backups/
+storage/
+*.pt
+*.tiff
+*.tif
+*.svs
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+
+# Node / Next.js
+node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/e2e/.tmp/
+frontend/playwright-report/
+frontend/test-results/
+
+# OS
+.DS_Store

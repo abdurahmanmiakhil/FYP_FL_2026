@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Neutral greys + one accent (clinical blue). All text/background pairs meet WCAG 2.1 AA. */
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 43%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 19% 36%;
+    --accent: 210 40% 94%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 87%;
+    --input: 214 32% 80%;
+    --ring: 221 83% 43%;
+    --radius: 0.5rem;
+    --page: 210 33% 98%;
+
+    --grade-low: 142 72% 24%;
+    --grade-low-bg: 142 76% 94%;
+    --grade-mid: 30 95% 28%;
+    --grade-mid-bg: 45 100% 92%;
+    --grade-high: 0 74% 38%;
+    --grade-high-bg: 0 86% 95%;
+    --warn: 30 95% 26%;
+    --warn-bg: 48 100% 92%;
+  }
+
+  .dark {
+    --background: 222 47% 8%;
+    --foreground: 210 40% 96%;
+    --card: 222 42% 11%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 42% 11%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 217 91% 68%;
+    --primary-foreground: 222 47% 9%;
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 16%;
+    --muted-foreground: 215 20% 72%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 84% 66%;
+    --destructive-foreground: 222 47% 9%;
+    --border: 217 30% 22%;
+    --input: 217 30% 30%;
+    --ring: 217 91% 68%;
+    --page: 222 47% 6%;
+
+    --grade-low: 142 69% 58%;
+    --grade-low-bg: 142 60% 12%;
+    --grade-mid: 40 95% 62%;
+    --grade-mid-bg: 32 70% 13%;
+    --grade-high: 0 90% 72%;
+    --grade-high-bg: 0 60% 15%;
+    --warn: 45 95% 64%;
+    --warn-bg: 38 70% 12%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-[hsl(var(--page))] text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* OpenSeadragon viewer chrome */
+.osd-viewer .navigator {
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.3);
+}

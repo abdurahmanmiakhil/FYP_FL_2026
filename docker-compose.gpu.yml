@@ -1,0 +1,13 @@
+# NVIDIA GPU worker (needs the NVIDIA Container Toolkit):
+#   docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+services:
+  worker:
+    build: {context: ., dockerfile: docker/worker-cuda.Dockerfile}
+    image: ${REGISTRY:-gleasonai}/worker-cuda:${TAG:-latest}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
